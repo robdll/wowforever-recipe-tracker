@@ -1,0 +1,270 @@
+#!/usr/bin/env python3
+"""Regenerate WoWForeverRFT/Data/RecipeCatalog.lua from Blizzard Battle.net.
+
+Uses the public Game Data API namespace static-forever-{region}.
+Credentials are read from the environment only (never committed):
+
+  export BLIZZARD_CLIENT_ID=...
+  export BLIZZARD_CLIENT_SECRET=...
+  export BLIZZARD_REGION=us   # optional, default us
+
+  python scripts/generate_recipe_data.py
+
+The script writes recipe names, profession groupings, crafted items, and reagents.
+It does not include trainer, vendor, or mob sources—those come from in-game discovery
+or future enrichment when Blizzard exposes them.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import re
+import sys
+import urllib.parse
+import urllib.request
+from datetime import datetime, timezone
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+OUTPUT = REPO_ROOT / "WoWForeverRFT" / "Data" / "RecipeCatalog.lua"
+
+TOKEN_URL = "https://oauth.battle.net/token"
+API_HOSTS = {
+    "us": "https://us.api.blizzard.com",
+    "eu": "https://eu.api.blizzard.com",
+    "kr": "https://kr.api.blizzard.com",
+    "tw": "https://tw.api.blizzard.com",
+}
+
+SKIP_PROFESSION_NAMES = {"test profession [dnt]"}
+
+
+def getenv(name: str) -> str:
+    val = os.environ.get(name)
+    if not val:
+        print(f"Missing environment variable {name}", file=sys.stderr)
+        sys.exit(1)
+    return val
+
+
+def fetch_token(client_id: str, client_secret: str) -> str:
+    body = urllib.parse.urlencode({"grant_type": "client_credentials"}).encode()
+    req = urllib.request.Request(TOKEN_URL, data=body, method="POST")
+    cred = f"{client_id}:{client_secret}".encode()
+    import base64
+
+    req.add_header("Authorization", "Basic " + base64.b64encode(cred).decode())
+    with urllib.request.urlopen(req, timeout=60) as resp:
+        payload = json.load(resp)
+    return payload["access_token"]
+
+
+def api_get(base: str, path: str, token: str, namespace: str, locale: str = "en_US"):
+    q = urllib.parse.urlencode({"namespace": namespace, "locale": locale})
+    url = f"{base}{path}?{q}"
+    req = urllib.request.Request(url)
+    req.add_header("Authorization", f"Bearer {token}")
+    with urllib.request.urlopen(req, timeout=120) as resp:
+        return json.load(resp)
+
+
+def lua_escape(s: str) -> str:
+    return s.replace("\\", "\\\\").replace('"', '\\"')
+
+
+def profession_key(name: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_")
+
+
+def main() -> None:
+    region = os.environ.get("BLIZZARD_REGION", "us").lower()
+    client_id = getenv("BLIZZARD_CLIENT_ID")
+    client_secret = getenv("BLIZZARD_CLIENT_SECRET")
+    namespace = f"static-forever-{region}"
+    host = API_HOSTS.get(region, API_HOSTS["us"])
+
+    token = fetch_token(client_id, client_secret)
+    index = api_get(host, "/data/wow/profession/index", token, namespace)
+
+    professions: list[dict] = []
+    mob_drops: dict = {}
+    recipe_count = 0
+
+    for entry in index.get("professions", []):
+        href = entry["key"]["href"]
+        path = urllib.parse.urlparse(href).path
+        prof = api_get(host, path, token, namespace)
+        name = prof.get("name", "Unknown")
+        if name.lower() in SKIP_PROFESSION_NAMES:
+            continue
+        prof_id = prof["id"]
+        pkey = profession_key(name)
+        recipes: list[dict] = []
+
+        for tier in prof.get("skill_tiers", []):
+            tier_href = tier["key"]["href"]
+            tier_path = urllib.parse.urlparse(tier_href).path
+            tier_doc = api_get(host, tier_path, token, namespace)
+            for category in tier_doc.get("categories", []):
+                for recipe in category.get("recipes", []):
+                    rid = recipe["id"]
+                    rname = recipe.get("name", f"Recipe {rid}")
+                    detail_path = f"/data/wow/recipe/{rid}"
+                    try:
+                        detail = api_get(host, detail_path, token, namespace)
+                    except urllib.error.HTTPError:
+                        detail = {}
+                    crafted = detail.get("crafted_item", {}).get("id")
+                    recipes.append(
+                        {
+                            "id": rid,
+                            "name": rname,
+                            "skill": 0,
+                            "craftedItemID": crafted,
+                            "sources": {},
+                        }
+                    )
+                    recipe_count += 1
+
+        recipes.sort(key=lambda r: (r["name"].lower(), r["id"]))
+        professions.append(
+            {
+                "key": pkey,
+                "id": prof_id,
+                "name": name,
+                "icon": "Trade_Engineering",
+                "recipes": recipes,
+            }
+        )
+
+    generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%MZ")
+    lines = [
+        "-- AUTO-GENERATED by scripts/generate_recipe_data.py — do not edit by hand.",
+        "",
+        "local _, ns = ...",
+        "",
+        "local meta = {",
+        '  game = "forever",',
+        '  patch = "1.60.1",',
+        f'  apiNamespace = "{namespace}",',
+        f'  generatedAt = "{generated_at}",',
+        f"  recipeCount = {recipe_count},",
+        '  note = "Full recipe list from Battle.net; sources filled in-game or by enrichment.",',
+        "}",
+        "",
+        "local professions = {",
+    ]
+
+    for prof in professions:
+        lines.append("  {")
+        lines.append(f'    key = "{prof["key"]}",')
+        lines.append(f"    id = {prof['id']},")
+        lines.append(f'    name = "{lua_escape(prof["name"])}",')
+        lines.append(f'    icon = "{prof["icon"]}",')
+        lines.append("    recipes = {")
+        for rec in prof["recipes"]:
+            crafted = rec["craftedItemID"]
+            crafted_lua = str(crafted) if crafted else "nil"
+            lines.append(
+                "      { "
+                f'id = {rec["id"]}, name = "{lua_escape(rec["name"])}", '
+                f"skill = 0, craftedItemID = {crafted_lua}, sources = {{}} }},"
+            )
+        lines.append("    },")
+        lines.append("  },")
+
+    lines.extend(
+        [
+            "}",
+            "",
+            "local mobDrops = {}",
+            "",
+            "local itemToRecipe = {}",
+            "",
+            "local recipeByID = {}",
+            "local professionByKey = {}",
+            "",
+            "for _, prof in ipairs(professions) do",
+            "  professionByKey[prof.key] = prof",
+            "  for _, recipe in ipairs(prof.recipes) do",
+            "    recipe.professionKey = prof.key",
+            "    recipe.professionName = prof.name",
+            "    recipeByID[recipe.id] = recipe",
+            "    if recipe.recipeItemID then",
+            "      itemToRecipe[recipe.recipeItemID] = recipe.id",
+            "    end",
+            "  end",
+            "end",
+            "",
+            "ns.Data = {",
+            "  Meta = meta,",
+            "  Professions = professions,",
+            "  ProfessionByKey = professionByKey,",
+            "  RecipeByID = recipeByID,",
+            "  ItemToRecipe = itemToRecipe,",
+            "  MobDrops = mobDrops,",
+            "}",
+            "",
+            "function ns.Data.ProfessionKeyFromName(name)",
+            "  if not name then return nil end",
+            "  local lower = name:lower()",
+            "  for key, prof in pairs(professionByKey) do",
+            "    if prof.name:lower() == lower then return key end",
+            "  end",
+            "  return lower:gsub('%s+', '_')",
+            "end",
+            "",
+            "function ns.Data.GetRecipesForProfession(key)",
+            "  local prof = professionByKey[key]",
+            "  return prof and prof.recipes or {}",
+            "end",
+            "",
+            "function ns.Data.GetRecipe(recipeID)",
+            "  return recipeByID[recipeID]",
+            "end",
+            "",
+            "function ns.Data.GetMobDrops(npcID)",
+            "  local static = mobDrops[npcID]",
+            "  local discovered = ns.DB and ns.DB:GetDiscoveredMobSources(npcID) or {}",
+            "  local out = {}",
+            "  if static then",
+            "    for _, row in ipairs(static) do",
+            "      out[#out + 1] = row",
+            "    end",
+            "  end",
+            "  for recipeID, meta in pairs(discovered) do",
+            "    out[#out + 1] = {",
+            "      recipeID = recipeID,",
+            "      chance = meta and meta.chance,",
+            "      zone = meta and meta.zone,",
+            "      discovered = true,",
+            "    }",
+            "  end",
+            "  return out",
+            "end",
+            "",
+            "function ns.Data.ResolveRecipeForItem(itemID)",
+            "  if itemToRecipe[itemID] then return itemToRecipe[itemID] end",
+            "  if C_Item and C_Item.GetItemSpell then",
+            "    local spellID = select(2, C_Item.GetItemSpell(itemID))",
+            "    if spellID and recipeByID[spellID] then return spellID end",
+            "  end",
+            "  local name = GetItemInfo(itemID)",
+            "  if name and name:find('Recipe:', 1, true) then",
+            "    for id, recipe in pairs(recipeByID) do",
+            "      if recipe.name and name:find(recipe.name, 1, true) then return id end",
+            "    end",
+            "  end",
+            "  return nil",
+            "end",
+            "",
+        ]
+    )
+
+    OUTPUT.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    print(f"Wrote {OUTPUT} ({recipe_count} recipes, {len(professions)} professions)")
+
+
+if __name__ == "__main__":
+    main()

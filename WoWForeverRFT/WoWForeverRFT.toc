@@ -1,0 +1,8 @@
+## Interface: 16001
+## Title: WoW-Forever Recipe Tracker
+## Notes: Forever-only build — see WoWForeverRFT_Forever.toc
+## Author: WoW-Forever Guild
+## Version: 1.0.0
+
+# This stub points installers at the Forever TOC. The client prefers
+# WoWForeverRFT_Forever.toc on game type Forever / Camelot.
