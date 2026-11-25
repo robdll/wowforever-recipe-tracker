@@ -12,9 +12,11 @@ Built for the **WoW-Forever** guild. Plain Lua/XML, no Ace3.
    World of Warcraft/_forever_/Interface/AddOns/WoWForeverRFT
    ```
 
-2. Restart the client (TOC or new XML files require a full restart; `/reload` is enough for Lua-only edits).
+2. Ensure `WoWForeverRFT/WoWForeverRFT.toc` is present — the Forever client loads this single plain TOC (same pattern as Auctionator and other addons), not a separate `_Forever.toc` file.
 
-3. Confirm the addon is not “Out of date”: the Forever TOC declares `## Interface: 16001`.
+3. Restart the client (TOC or new XML files require a full restart; `/reload` is enough for Lua-only edits).
+
+4. Confirm the addon is not “Out of date”: `WoWForeverRFT.toc` must declare `## Interface: 16001`.
 
 ## Slash commands
 
