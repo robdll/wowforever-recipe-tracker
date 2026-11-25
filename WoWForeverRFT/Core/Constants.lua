@@ -1,7 +1,7 @@
 local addonName, ns = ...
 ns.Constants = {
   ADDON_NAME = addonName,
-  VERSION = "1.0.0",
+  VERSION = "1.0.1",
   SNOOZE_SECONDS = 30 * 60,
   ALERT_ICON = "Interface\\Icons\\INV_Misc_Book_09",
   PROFESSION_ICON_FALLBACK = "Interface\\Icons\\Trade_Engineering",
