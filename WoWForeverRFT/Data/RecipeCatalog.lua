@@ -124,6 +124,7 @@ local itemToRecipe = {
 
 local recipeByID = {}
 local professionByKey = {}
+local mobRecipeIndex = nil
 
 for _, prof in ipairs(professions) do
   professionByKey[prof.key] = prof
@@ -166,6 +167,73 @@ end
 
 function ns.Data.GetRecipe(recipeID)
   return recipeByID[recipeID]
+end
+
+local function ensureMobRecipeIndex()
+  if mobRecipeIndex then
+    return
+  end
+  mobRecipeIndex = {}
+  for npcID, drops in pairs(mobDrops) do
+    local list = mobRecipeIndex[npcID]
+    if not list then
+      list = {}
+      mobRecipeIndex[npcID] = list
+    end
+    for _, drop in ipairs(drops) do
+      local recipe = drop.recipeID and recipeByID[drop.recipeID]
+      if recipe then
+        list[#list + 1] = recipe
+      end
+    end
+  end
+end
+
+function ns.Data.InvalidateMobIndex(npcID)
+  if mobRecipeIndex and npcID then
+    mobRecipeIndex[npcID] = nil
+  end
+end
+
+function ns.Data.HasMobRecipes(npcID)
+  if not npcID then
+    return false
+  end
+  if mobDrops[npcID] then
+    return true
+  end
+  if ns.DB and ns.DB.GetDiscoveredMobSources then
+    local disc = ns.DB:GetDiscoveredMobSources(npcID)
+    return disc and next(disc) ~= nil
+  end
+  return false
+end
+
+function ns.Data.GetMobRecipes(npcID)
+  if not npcID then
+    return nil
+  end
+  ensureMobRecipeIndex()
+  local out = {}
+  local static = mobRecipeIndex[npcID]
+  if static then
+    for i = 1, #static do
+      out[#out + 1] = static[i]
+    end
+  end
+  local discovered = ns.DB and ns.DB:GetDiscoveredMobSources(npcID) or nil
+  if discovered then
+    for recipeID in pairs(discovered) do
+      local recipe = recipeByID[recipeID]
+      if recipe then
+        out[#out + 1] = recipe
+      end
+    end
+  end
+  if #out == 0 then
+    return nil
+  end
+  return out
 end
 
 function ns.Data.GetMobDrops(npcID)

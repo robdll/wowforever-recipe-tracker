@@ -9,6 +9,7 @@ ns.Browser = Browser
 local frame
 local selectedProfession
 local rows = {}
+local initialized = false
 
 local function ensureFrame()
   if frame then
@@ -156,10 +157,13 @@ local function professionMenuInit(self, level)
   end
 end
 
-function Browser:Init()
+function Browser:EnsureInit()
+  if initialized then
+    return true
+  end
   local f = ensureFrame()
   if not f then
-    return
+    return false
   end
   UIDropDownMenu_Initialize(f.ProfMenu, professionMenuInit)
   if not selectedProfession and ns.Data.Professions[1] then
@@ -168,13 +172,23 @@ function Browser:Init()
   end
   f:Hide()
   f:SetScript("OnShow", function()
-    Known:MarkDirty()
-    Known:Refresh()
-    Browser:RefreshList()
+    ns.Debug:Mark("browser_open")
+    Known:RefreshProfessions()
+    local recipes = ns.Data.GetRecipesForProfession(selectedProfession)
+    Known:WarmRecipes(recipes, function()
+      Browser:RefreshList()
+      ns.Debug:Mark("browser_recipes_warmed")
+    end)
   end)
+  initialized = true
+  ns.Debug:Mark("browser_initialized")
+  return true
 end
 
 function Browser:Toggle()
+  if not Browser:EnsureInit() then
+    return
+  end
   local f = ensureFrame()
   if not f then
     return
@@ -187,6 +201,9 @@ function Browser:Toggle()
 end
 
 function Browser:Open()
+  if not Browser:EnsureInit() then
+    return
+  end
   local f = ensureFrame()
   if f then
     f:Show()
@@ -194,6 +211,9 @@ function Browser:Open()
 end
 
 function Browser:SelectRecipe(recipeID)
+  if not Browser:EnsureInit() then
+    return
+  end
   local recipe = ns.Data.GetRecipe(recipeID)
   if recipe and recipe.professionKey then
     selectedProfession = recipe.professionKey

@@ -2,7 +2,7 @@
 ## Title: WoW-Forever Recipe Tracker
 ## Notes: Guild recipe browser, sources, and learn alerts for WoW: Forever.
 ## Author: WoW-Forever Guild
-## Version: 1.0.0
+## Version: 1.0.1
 ## IconTexture: Interface\Icons\INV_Misc_Book_09
 ## SavedVariables: WoWForeverRFTDB
 ## X-Category: Professions
@@ -23,4 +23,5 @@ Features\VendorAlert.lua
 Features\MobAlert.lua
 Features\MobTooltip.lua
 Core\Slash.lua
+Core\Debug.lua
 Core\Main.lua

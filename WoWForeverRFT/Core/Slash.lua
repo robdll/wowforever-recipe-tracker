@@ -7,6 +7,7 @@ local function printHelp()
   print("/rft refresh — rescan known recipes")
   print("/rft minimap — show minimap button")
   print("/rft snooze clear — clear all snoozes")
+  print("/rft debug — toggle load timing debug output")
 end
 
 local function registerSlash()
@@ -23,9 +24,11 @@ local function registerSlash()
         tostring(meta.recipeCount)
       ))
     elseif msg == "refresh" then
-      ns.KnownRecipes:MarkDirty()
-      ns.KnownRecipes:Refresh()
-      print("Known recipe cache refreshed.")
+      ns.KnownRecipes:RefreshProfessions()
+      print("Known recipe cache refreshed (profession scan).")
+    elseif msg == "debug" then
+      local on = ns.Debug:Toggle()
+      print("RFT debug is now " .. (on and "ON" or "OFF"))
     elseif msg == "minimap" then
       ns.Minimap:Restore()
     elseif msg == "snooze clear" then

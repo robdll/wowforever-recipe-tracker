@@ -100,6 +100,9 @@ function Discovery:RecordLoot(itemID)
     zone = Util.PlayerZone(),
     at = Util.GetTime(),
   })
+  if ns.Data.InvalidateMobIndex then
+    ns.Data.InvalidateMobIndex(npcID)
+  end
   local recipe = ns.Data.GetRecipe(recipeID)
   if recipe then
     recipe.sources = recipe.sources or {}

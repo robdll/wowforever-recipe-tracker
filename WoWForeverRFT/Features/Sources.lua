@@ -79,14 +79,5 @@ function Sources:FormatRecipeSources(recipe)
 end
 
 function Sources:RecipesFromMob(npcID)
-  local result = {}
-  local drops = ns.Data.GetMobDrops(npcID)
-  for _, drop in ipairs(drops) do
-    local recipeID = drop.recipeID
-  local recipe = recipeID and ns.Data.GetRecipe(recipeID)
-    if recipe then
-      result[#result + 1] = recipe
-    end
-  end
-  return result
+  return ns.Data.GetMobRecipes(npcID) or {}
 end
